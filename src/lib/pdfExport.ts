@@ -40,6 +40,25 @@ const onclonePdfFallback = (clonedDoc: Document) => {
   clonedDoc.querySelectorAll<HTMLElement>('[data-pdf-mascot-fallback]').forEach((el) => {
     el.style.opacity = '1'
   })
+  // Force the entrance-animation elements (framer-motion cards) to their settled end state in the
+  // clone, regardless of whether the live DOM's animation had actually finished when this ran —
+  // otherwise a capture that lands mid-animation renders a washed-out, scaled-down card.
+  clonedDoc.querySelectorAll<HTMLElement>('[data-pdf-settle]').forEach((el) => {
+    el.style.opacity = '1'
+    el.style.transform = 'none'
+  })
+}
+
+/**
+ * Lets pending layout/animation settle before capture: a paint cycle for any ResizeObserver-driven
+ * layout (the recharts radar sizes itself asynchronously), and enough time for the score count-up
+ * and card entrance animations (~900ms) to reach their final state — otherwise a capture can land
+ * mid-animation and show a partial score, a scaled-down card, or a washed-out background.
+ */
+function waitForSettledLayout(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 1000)))
+  })
 }
 
 /**
@@ -128,6 +147,8 @@ export async function exportResultsPdf(options: ExportPdfOptions): Promise<void>
   pdf.setTextColor(0)
   cursorY += 16
 
+  await waitForSettledLayout()
+
   for (const block of blocks) {
     const canvas = await html2canvas(block, {
       backgroundColor: '#ffffff',
@@ -137,8 +158,13 @@ export async function exportResultsPdf(options: ExportPdfOptions): Promise<void>
     cursorY = placeBlock(pdf, canvas, MARGIN, cursorY, contentWidth) + BLOCK_GAP
   }
 
-  pdf.addPage()
-  cursorY = MARGIN
+  // Continue right below the last image block instead of always forcing a new page — only start
+  // one if there truly isn't room left, so the report stays 2 pages whenever content allows it.
+  const scoreSectionMinHeight = 90
+  if (cursorY + scoreSectionMinHeight > PAGE_HEIGHT - MARGIN) {
+    pdf.addPage()
+    cursorY = MARGIN
+  }
 
   pdf.setFont('helvetica', 'bold')
   pdf.setFontSize(14)

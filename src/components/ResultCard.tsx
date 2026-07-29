@@ -35,6 +35,7 @@ export function ResultCard({ mascot, tier, score, maxScore, big = false }: Resul
 
   return (
     <motion.div
+      data-pdf-settle
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.4 }}
